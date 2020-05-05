@@ -109,23 +109,37 @@
 
 
 
-## Code OVERVIEW
+### Code OVERVIEW
 
-1. ### 取指令（***Instruction Fetch***）
 
-   - ***I-Cache***
+
+1. ##### 取指令（***Instruction Fetch***）
+
+   
+
+   <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/front-end.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;">BOOM前端</div> </center>
+
+   ​		和Rocket core一样，BOOM也有自己的前端（front-end）。该前端提取指令，并在整个Fetch阶段（fetch stage）进行预测，以便在多个Fetch周期（F0,F1...）中重定向指令流。如果在BOOM的后端监测到一个错误预测，或者BOOM自己的一个预测器想要重定向流水线到一个不同方向，一个请求将发送到前端，然后开始从一个新的指令路径取指令。更多分支预测器是如何工作的可以查看Fetch阶段流水线的Branch Prediction。
+
+   ​		因为BOOM支持超标量的(superscalar)fetch，前端从**指令内存**中检索一个**Fetch Packet**，然后将他们存入**Fetch Buffer**中以便后续的流水线使用。**Fetch Packet**中同样包含其他元数据（meta-data），例如valid和一些用于流水线后面要用到分支预测信息。另外，PC和分支预测信息被存储在Fetch Targe Queue中，Fetch Target Queue为后续的流水线保留着信息。
+
+   
+
+   - ***The Rocket Core I-Cache***
 
      Boom的icache取自Rocket processor源代码中，采用了**虚地址实标识组相连Cache**（***virtually indexed,physically tagged set-associative Cache*** ）
 
      
 
-     icache会读出固定数量的字节（对齐的）并将指令为存储到寄存器中，后续的指令提取可通过该寄存器进行管理。当寄存器用完以后或分支预测器将PC指引到其他位置后，才会再次出发***i-cache***。
+     为了节约能量，***i-cache***会读出固定数量的字节（对齐的）并将指令为存储到寄存器中，后续的指令提取可通过该寄存器进行管理。当提取寄存器用完以后或分支预测器将PC定向到其他位置后，才会再次启动该***i-cache***。
 
      
 
-     现在***i-cache***不支持跨缓存线的提取，也不支持有关超标量提取地址的非对齐取。
+     现在***i-cache***不支持跨高速缓存行（Cache-line）的提取，也不支持有关超标量提取地址的非对齐取(fetching unaligned)。
 
-     
+     > 因为一个高速缓存行（Cache-line）并没有存储在存储体的单行中，而是在单个存储体中进行了条带化，以匹配来自非核心的重新填充大小。
+     >
+     > 获取非对齐的数据需要修改底层的实现，例如，对i-cache进行存储，以便同时访问缓存行的连续快。
 
      ***i-cache***也不支持**同时命中和缺失（*hit-and-miss*）**，缺失后，***i-cache***会先处理缺失，等处理完毕后再去处理其他请求。对于分支预测器发现预测错误并且希望***i-cache***以正确的路径提取的场景，这并不理想。
 
@@ -133,29 +147,109 @@
 
    - ***Fetching Compressed Instructions***
 
-     BOOM中实现了RISC-V中的压缩指令（RISC-V Compressed ISA extension），
+     ​		BOOM中实现了RISC-V中的压缩指令（RISC-V Compressed ISA extension）。拓展的压缩指令集或称RVC可以对常用指令进行较小的16bit编码，以减少静态和动态代码的大小。RVC具有许多微架构师特别感兴趣的功能：
+
+     - 32bit的指令没有对齐要求的话，可能会从一个**半字边界**（***half boundary***）开始。
+     - 所有的16bit指令直接映射到一个更长的32bit的指令。
+
+     ​		
+
+     ​		在前端阶段，BOOM从i-cache中检索到一个Fetch Packet，为了分支预测会迅速解析该指令，并将Fetch Packet压入Fetch Buffer。然后这样做会带来一些列问题需要处理：
+
+     - 增加解码的复杂性（现在操作数到处移动）
+     - 查找指令的开始位置
+     - 在整个代码库中删除`+4`假设，尤其是在分支处理中
+     - 非对齐指令，特别是耗尽缓存行和虚拟页面的指令
 
      
 
+     ​		最后一点在Fetch单元需要一个额外的“有状态性”，因为获取指令的所有部分可能需要多个周期。
+
+     下面将通过描述一个指令生存期来描述BOOM中RVC的实现。
+
+     
+
+     - 前端返回一个`fetchWidth * 16bit`宽度的Fetch Packet，这是由BOOM前端内在支持的。
+     - 在**F3**保留有状态性，在**F3**中Fetch Packet从i-cache的response队列中出队列，并进队列到Fetch Buffer中。
+     - **F3**跟踪最后一个Fetch Packet的尾随16bit，PC和指令边界。这些组成了当前的Fetch Packet并且扩展成fetchWidth * 32bits进入Fetch Buffer中。提前解码可以决定在这个Fetch Packet中的每一个指令的起始地址，并且对Fetch Buffer隐藏Fetch Packet
+     - 现在，当将Fetch Buffer存储到其内存中时，它总会压缩无效或不对齐的指令
+
+     
+
+     以下部分描述了其他实现细节：
+
+     - 一个具有挑战性的问题是处理跨越FetchBoundary的指令，我们将这些指令跟踪为属于包含其高阶16bit的Fetch Packet的指令（这是人话？），当决定到这些指令的PC时我们必须小心，f方法就是跟踪所有最初在Fetch Boundary上未对齐的指令。
+
+       
+
    - ***The Fetch Buffer***
 
-     ***Fetch Packet***从***i-cache***中提取，然后放入到***Fetch Buffer***中，***Fetch Buffer***将Back-end的执行流水段和Front-end的指令存取端解耦合。
+     ***Fetch Packet***从***i-cache***中提取，然后放入到***Fetch Buffer***中，***Fetch Buffer***将Back-end的执行流水段和Front-end的指令存取端**解耦合(*decouple*)**。
 
-     ***Fetch Buffer***是参数化的，条目数是可以更改的，并且可以切换是否将缓冲区实现直通列队。
+     ***Fetch Buffer***是参数化的：条目数是可以更改的，缓冲区是否可以实现**直通*flow-through***队列也是可以自定义的。
+
+     > 当队列为空且消费者正在请求时，一个直通式队列（flow-through queue）允许entries可以进队列后立刻出队列，
 
      
 
    - ***The Fetch Target Queue***
 
-     提取目标队列中从i-cache接收PC，及与其相关联的分支预测的信息。他会保留这些信息以供流水线在其在执行Micro-Ops期间参考（reference），一旦一个指令被提交，它就会由***ROB***出队，并在流水线重定向/错误推测期间进行更新。
+     ​		***The Fetch Targe Queue***是一个保留从i-cache中获取到PC和与该地址相关的分支预测信息的队列。他会保留这些信息以供流水线在其在执行**Micro-Ops（UOPs）**期间参考（reference），一旦一个指令被提交，它就会由***ROB***出队，并在流水线重定向/错误推测期间进行更新。
+
+     
+
+2. ##### 分支预测（*Branch Prediction*）
+
+   Boom中用了两级分支预测器，一个是较快的***Next-Line Predictor（NLP）***和一个较慢的但是更复杂的***Backing Predictor（BPD）***。其中***NLP***是一个**分支目标缓存**，***BPD***是一个更复杂的类似***GShare***的结构预取器。
+
+   > 不幸的是，文献中的术语在所谓的分支预测遍历的不同类型和级别上有些混乱，文献中已经提到了不同中结构；“Micro-BTB”  vs “BTB”，“NLP” vs "BHT", 和“cache-line predictor” vs ”overriding predictor“。尽管Rocket core称其自己的预测器为BTB，但BOOM则将其称为下一行预测器（Next-Line Predictor，NLP），这是为了说明他是组合逻辑的预测器，为获取下一行指令提供单周期的预测，并且Rocket BTB包含的复杂性远远超过分支目标缓冲区结构。同样，Backing Predictor（BPD）名字的选择是为了避免过分描述内部设计（是否是过于简单的BHT？是否已标记？是否会覆盖NLP），同时保持准确。
 
    
 
-2. ***Branch Prediction***
+   - The Next-Line Predictor（NLP）
 
-   Boom中用了两级分支预测器，一个是较快的***Next-Line Predictor（NLP）***和一个较慢的但是更复杂的***Backing Predictor（BPD）***。其中***NLP***是一个**分支目标缓存**，***BPD***是一个更复杂的类似***GShare***的结构预取器
+     ​		BOOM核心的**前端（*Front-end*）**取指令，并在每个周期都会预测下一条指令的位置，如果在BOOM的后端发现预测失败或者BOOM自己的Backing Predictor（BPD）想要重定向流水线，一个请求将发送到**前端（*Front-end*）**并开始沿一个新的指令路径取指令。
+
+     ​		NLP利用当前取指令的PC，并利用组合电路预测下一个周期该在哪里取指令，如果预测的正确，这里应该没有流水线气泡
+
+     ​		NLP是一个**全相连的分支目标缓存（*Branch Target Buffer，BTB*）**，**双模表（*Bi-Modal Table，BIM*）**和一个**返回地址栈（*Return Address Stack，RAS*）**，这些工作在一起构成了一个快速的但精确度还可以的分支预测器。
+
+     
+
+     - NLP Predictions
+
+       取指令首先为了找到匹配的BTB条目，执行标签匹配。如果命中，BTB条目将会与RAS一起预测在Fetch Packet中是否存在分支，跳转或返回，以及硬归咎于Fetch Packet的那一条指令。BIM用于决定所做的预测是否发生分支，BTB中童谣包含着一个预测的PC目标，经常用于下一个周期获取PC值。
+
+       <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/BOOM-BTB.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;" align= "justify">Next-Line Predictor(NLP)单元，取指令的PC扫描BTB的tag，如果有相应的条目（entry）与之匹配并且该条目是有效的（valid），那最后的裁决会参考BIM和RAS。如果该条目（entry）是一个“ret”（return instruction），那么最终的目标将来自RAS。如果该条目（entry）是一个无状态的“jmp”（jump instruction），那将不会参考BIM。“bidx”或称branch index（分支索引标记），将会标记超标量Fetch Packet那条指令时控制流预测造成的，很有必要去标记Fetch Packet中的其他来自分支之后的指令。
+           </div> </center>
+
+        
+
+       如果预测指令是分支，则仅在BTB条目中命中是使用BIM的滞后位。
+
+       如果BTB条目包含一个返回指令，RAS栈会被用来提供预测的返回PC用作下一个取址PC。实际的RAS的管理（何时到达或堆栈）是由外部控制的。为了面积效率，号位的PC-tags和PC目标被存储在了一个压缩的文件中。
+
+       
+
+     - NLP Updates
+
+       每一个传递到流水线中的分支不仅保留着它自己的PC，同时保留着其Fetch PC（Fetch Packet起始指令的PC）
+
+       > 事实上，只有最低位或者最高位被保留
+
+       - BTB Updates
+
+         
+
+       - RAS Updates
+
+       - Superscalar Predictions
+
+   - The Backing Predictor(BPD)
 
    
+
+3. 
 
 
 
