@@ -239,13 +239,80 @@
 
        - BTB Updates
 
-         
+         仅当执行阶段的分支单元或Fetch阶段的BPD跳转从定向前端进行分支或跳转时，BTB才会更新。如果没有对应于的采取分支或跳转的BTB条目，那么久为其分配一个新条目。
+
+         > 错误预测下重定向PC时，这种新的Fetch PC与需要写入新BTB条目的目标PC字段中的更新PC相同。这种巧合允许PC亚索表使用单个搜索端口——它可以一边读取该表以进行下一个预测，同时还查看新的更新的PC是否已经为其分配了适当的high-order 位。
 
        - RAS Updates
 
+         在Fetch阶段一旦在Fetch Packet的指令已经被解码，RAS将会更新。如果执行的指令是一个call类型，那么返回地址将被压入RAS。如果执行的指令是一个return类型，将从RAS中弹出一项。
+
+         > 虽然RISC-V并没有指定的call指令，可以通过检查一个写回目标为x1（又名返回地址寄存器）的JAL或JALR指令来推断。
+
        - Superscalar Predictions
 
+         当NLP做一个预测时，实际上是在使用BTB标记与预测分支的Fetch PC匹配，并不是分支自己的PC。NLP必须在整个Fetch Packet中预测许多可能分支中哪一个将成为重定向PC的主要分支。因此，我们使用给定的分支的Fetch PC，而不是BTB标签匹配中自己的PC。
+
+         > 每个BTB条目对应一个单独的Fetch PC，但是会帮助预测整个Fetch Packet。然而，BTB条目只能在控制流指令中存储meta-data和target-data。虽然在这种设计中确实存在损害性能的病态情况，但前提是，相对于Fetch PC，Fetch Packet中的哪个分支是主要分支，并且至少对于窄的Fetch设计而言，对这种设计的评估表明，它非常复杂优化，性能没有明显损失。
+
    - The Backing Predictor(BPD)
+
+     ​		当NLP预测无误的时候，处理器的后端提供一个不间断的指令流去执行。NLP能够提供昂贵的（就面积和功率而言），非常小（仅能记住几十个分支）并且非常简单（双模态表（BIM））的情况下提供一个快速的单周期的预测。但hysteresis bits不能学习非常复杂或较长历史的模式。
+
+     ​		为了捕获到跟多的分支和更复杂的分支行为，BOOM支持Backing Predictor（BPD）。
+
+     ​		BPD的目标是在一个紧凑的面积上提供一个高精确度的预测，BPD值做taken/not-taken的预测，因此它依赖于其他代理去提供有关什么指令是分支以及他们的目标是什么的信息，这个信息可以由BTB提供也可以在从i-cache中获取指令后等待它们本身自己的解码。这省去了在BPD中存储PC标签和分支目标的麻烦。
+
+     ​		在整个访存阶段，BPD的访问与Cache访问和BTB访问时并行的，这允许BPD存储在顺序内存中（即使用SRAM而不是触发器）。通过一些巧妙的架构，BPD可以存储在单端口SRAM中已实现所需的密度。
+
+     <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/front-end.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">BOOM前端，这里你可以看到BTB和分支预测器在图像的底部，从指令寄存器中返回的指令被迅速译码，任何被BTB或BPD预测为taken的分支将在F4阶段重定向前端。预测的快照和meta-data被存储在分支重命名快照（Branch Rename Snapshots）中（这是为了在预测失败后修复预测器）或Fetch Target Queue（FTQ）中（这是为了在Commit阶段更新预测器）</div> </center>
+
+     
+
+     - 预测（Making Predictions）
+
+       当做预测时，BPD必须提供以下信息：
+
+       - 正在做出预测吗？
+       - 一个位向量的taken/not-taken的预测器
+
+       ​        根据第一个要点，BPD可能决定不进行预测。这可能是因为预测器利用tags去获知其预测是否有效或者治理可能有阻止发生预测的结构冒险。
+
+       ​        BPD提供了一个taken/not-taken预测的位向量，这个位向量的大小和流水线的Fetch宽度相匹配（一位对应Fetch Packet的一条指令）。后续的Fetch阶段将会decode在Fetch Packet中的指令，计算分支目标，并结合BPD的预测位向量来确定是否应该进行前端重定向。
+
+       
+
+     - 跳转和跳转寄存器指令（Jump and Jump-Register Instructions）
+
+       ​		BPD只对**条件分支**的方向（taken vs not-taken）做预测。**非条件跳转**（JAL和JALR）指令将与BPD分开处理。
+
+       > JAL指令会跳转到`PC+Immediate`，JALR会跳转到`PC+R[rs1]+Immediate`
+
+       ​		NLP学习所有“taken”指令的PC和目标PC——因此NLP可以预测跳转（jumps）和跳转寄存器（jump-register）指令。
+
+       ​		如果NLP没有对一个JAL指令做预测，那流水线会在F4阶段重定向。
+
+       ​		没有被NLP做出预测的跳转寄存器指令（jump-register instructions）将在不进行预测的情况下被送到流水线中。由于JALR指令需要读寄存器文件以推断跳转目标，因此如果NLP不做预测，则无法做出任何操作。
+
+       > 对指令来说，在F4阶段重定向前端很简单，因为可以对指令进行解码并且可以知道其目标
+
+     - 更新Backing Predictor
+
+     - 管理全局历史寄存器（Managing the Global History Register，GHR）
+
+     - 用于预测的FTQ（The Fetch Target Queue for Predictions）
+
+     - 重命名快照状态（Rename Snapshot State）
+
+     - 抽象的分支预测器类型（The Abstract Branch Predictor）
+
+     - 两位计数器表（The Two-bit Counter Tables）
+
+     - GShare预测器（The GShare Predictor）
+
+     - TAGE预测器（The TAGE Predictor）
+
+     - 其他预测器（Other Predictors）
 
    
 
