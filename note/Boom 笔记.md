@@ -223,7 +223,7 @@
        <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/BOOM-BTB.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;" align= "justify">Next-Line Predictor(NLP)单元，取指令的PC扫描BTB的tag，如果有相应的条目（entry）与之匹配并且该条目是有效的（valid），那最后的裁决会参考BIM和RAS。如果该条目（entry）是一个“ret”（return instruction），那么最终的目标将来自RAS。如果该条目（entry）是一个无状态的“jmp”（jump instruction），那将不会参考BIM。“bidx”或称branch index（分支索引标记），将会标记超标量Fetch Packet那条指令时控制流预测造成的，很有必要去标记Fetch Packet中的其他来自分支之后的指令。
            </div> </center>
 
-        
+       
 
        如果预测指令是分支，则仅在BTB条目中命中是使用BIM的滞后位。
 
@@ -298,20 +298,50 @@
 
      - 更新Backing Predictor
 
+       通常来说，BPD在Commit阶段会被更新。这是为了防止BPD被错误的路径信息污染。
+
+       > 在数据Cache中，从错误的路径中去数据可能是有用的，因为有可能未来的代码执行可能会取该数据。糟糕的情况下，Cache的有效的容量减少了。
+     >
+       > 但是对于BPD来说，添加错误路劲的信息是非常危险的，这个错误路径确实代表了永远不会执行的路径，因此该信息永远不会对以后的代码执行有用。
+     >
+       > 更糟糕的是，别名（aliasing）是分支预测器中的一个问题（最多使用部分标签检查），错误路径信息会产生破坏性的别名问题，从而是预测精度变差。最后，正在预测信息的旁路可能会发生，从而笑出了指导提交阶段才更新预测器的代价。
+
+       然而，因为BPD使用了全局历史（global history），所以当前端被重定向后，全局历史必须重置，因此，当发生错误预测时，还必须（部分）更新BPD，以重置所在Fetch阶段发生的推测更新
+
+       ​		在做一个预测时，BPD传递给流水线一个“回应信息包”（response info packet）。这个“info packet”在提交之前一直存储在Fetch Target Queue（FTQ）中。
+
+       > 这些“info packets”不存储在ROB有两个原因：1.它们和Fetch Packet相关而不是和指令相关。2.它们非常的expensive（包含的信息非常多？）所以将FTQ的大小设置小于ROB是很合理的。
+
+       一旦所有的与“info packet”相关的指令被提交了，“info packet”会被放置到BPD中（以及分支的最终结果），BPD会被更新。预测的FTQ包括了FTQ，该FTQ处理在提交期间更新预测变量所需的快照信息。
+     
+       <font color=red>？？？</font>
+     
+       
+     
      - 管理全局历史寄存器（Managing the Global History Register，GHR）
-
+     
+       GHR是分支预测器中的一个重要组成部分，它包含了前面N个分支的结果（N为GHR的大小）
+     
+       > 实际上，一个Fetch Packet的所有的条件分支的方向都被压缩为单个位（通过“或”缩减），但是在这一节，用不太准确的术语去描述历史寄存器会更容易一些
+     
+       当我们去了一个分支`i`,重要的是，要获取前`i-N`个分支的方向，这样才能可以做准确的预测。等到提交阶段才更新GHR将会太晚了（数十条分支可能正在执行且得不到反应）。因此，一旦提取并预测了分支，就必须以推测的方式更新GHR。
+     
+       ​		如果发生错误预测，那GHR必须重置并且跟新以反应实际的历史。这意味每一个分支（更精确的说是每一个Fetch Packet）必须发生错误预测的情况下对GHR进行快照。
+     
+       > 注意：从开始的F0阶段进行预测（读取全局历史记录）到在F4阶段重定向前端（全局历史被更新）之间存在延迟。这导致一个“影子”，在该影子中，在F0阶段开始做预测分支看不到前面一两个周期（即现在F1/2/3阶段）分支的结果。尽管这些“影子分支"必须反应全局历史的快照，但这一点很重要。
+     
      - 用于预测的FTQ（The Fetch Target Queue for Predictions）
-
+     
      - 重命名快照状态（Rename Snapshot State）
-
+     
      - 抽象的分支预测器类型（The Abstract Branch Predictor）
-
+     
      - 两位计数器表（The Two-bit Counter Tables）
-
+     
      - GShare预测器（The GShare Predictor）
-
+     
      - TAGE预测器（The TAGE Predictor）
-
+     
      - 其他预测器（Other Predictors）
 
    
