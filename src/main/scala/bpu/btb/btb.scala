@@ -55,7 +55,7 @@ case class BoomBTBParameters(
   tagSz: Int    = 13,
   offsetSz: Int = 13,
 
-  // Extra knobs
+  // Extra knobs (旋钮)
   bypassCalls: Boolean = true,
   rasCheckForEmpty: Boolean = true,
   numBufferEntries: Int = 8
@@ -66,7 +66,8 @@ case class BoomBTBParameters(
  */
 trait HasBoomBTBParameters extends HasBoomCoreParameters
 {
-  val btbParams = boomParams.btb
+  val btbParams = boomParams.btb 
+
   val nSets = btbParams.nSets
   val nBanks = btbParams.nBanks
   val nWays = btbParams.nWays
@@ -239,7 +240,7 @@ abstract class BoomBTB(implicit p: Parameters) extends BoomModule with HasBoomBT
     // req.valid is false if stalling (aka, we won't read and use BTB results, on cycle S1).
     // req.bits.addr is available on cycle S0.
     // resp is expected on cycle S2.
-    val req = Flipped(Valid(new PCReq))
+    val req = Flipped(Valid(new PCReq)) 
 
     // resp is valid if there is a BTB hit.
     val resp = Valid(new BoomBTBResp)

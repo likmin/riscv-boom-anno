@@ -206,7 +206,7 @@
 
    
 
-   - The Next-Line Predictor（NLP）
+   - **The Next-Line Predictor（NLP）**
 
      ​		BOOM核心的**前端（*Front-end*）**取指令，并在每个周期都会预测下一条指令的位置，如果在BOOM的后端发现预测失败或者BOOM自己的Backing Predictor（BPD）想要重定向流水线，一个请求将发送到**前端（*Front-end*）**并开始沿一个新的指令路径取指令。
 
@@ -216,7 +216,7 @@
 
      
 
-     - NLP Predictions
+     - **NLP Predictions**
 
        取指令首先为了找到匹配的BTB条目，执行标签匹配。如果命中，BTB条目将会与RAS一起预测在Fetch Packet中是否存在分支，跳转或返回，以及硬归咎于Fetch Packet的那一条指令。BIM用于决定所做的预测是否发生分支，BTB中童谣包含着一个预测的PC目标，经常用于下一个周期获取PC值。
 
@@ -231,31 +231,31 @@
 
        
 
-     - NLP Updates
+     - **NLP Updates**
 
        每一个传递到流水线中的分支不仅保留着它自己的PC，同时保留着其Fetch PC（Fetch Packet起始指令的PC）
 
        > 事实上，只有最低位或者最高位被保留
 
-       - BTB Updates
+       - **BTB Updates**
 
          仅当执行阶段的分支单元或Fetch阶段的BPD跳转从定向前端进行分支或跳转时，BTB才会更新。如果没有对应于的采取分支或跳转的BTB条目，那么久为其分配一个新条目。
 
          > 错误预测下重定向PC时，这种新的Fetch PC与需要写入新BTB条目的目标PC字段中的更新PC相同。这种巧合允许PC亚索表使用单个搜索端口——它可以一边读取该表以进行下一个预测，同时还查看新的更新的PC是否已经为其分配了适当的high-order 位。
 
-       - RAS Updates
+       - **RAS Updates**
 
          在Fetch阶段一旦在Fetch Packet的指令已经被解码，RAS将会更新。如果执行的指令是一个call类型，那么返回地址将被压入RAS。如果执行的指令是一个return类型，将从RAS中弹出一项。
 
          > 虽然RISC-V并没有指定的call指令，可以通过检查一个写回目标为x1（又名返回地址寄存器）的JAL或JALR指令来推断。
 
-       - Superscalar Predictions
+       - **Superscalar Predictions**
 
          当NLP做一个预测时，实际上是在使用BTB标记与预测分支的Fetch PC匹配，并不是分支自己的PC。NLP必须在整个Fetch Packet中预测许多可能分支中哪一个将成为重定向PC的主要分支。因此，我们使用给定的分支的Fetch PC，而不是BTB标签匹配中自己的PC。
 
          > 每个BTB条目对应一个单独的Fetch PC，但是会帮助预测整个Fetch Packet。然而，BTB条目只能在控制流指令中存储meta-data和target-data。虽然在这种设计中确实存在损害性能的病态情况，但前提是，相对于Fetch PC，Fetch Packet中的哪个分支是主要分支，并且至少对于窄的Fetch设计而言，对这种设计的评估表明，它非常复杂优化，性能没有明显损失。
 
-   - The Backing Predictor(BPD)
+   - **The Backing Predictor(BPD)**
 
      ​		当NLP预测无误的时候，处理器的后端提供一个不间断的指令流去执行。NLP能够提供昂贵的（就面积和功率而言），非常小（仅能记住几十个分支）并且非常简单（双模态表（BIM））的情况下提供一个快速的单周期的预测。但hysteresis bits不能学习非常复杂或较长历史的模式。
 
@@ -269,7 +269,7 @@
 
      
 
-     - 预测（Making Predictions）
+     - **预测（Making Predictions）**
 
        当做预测时，BPD必须提供以下信息：
 
@@ -282,7 +282,7 @@
 
        
 
-     - 跳转和跳转寄存器指令（Jump and Jump-Register Instructions）
+     - **跳转和跳转寄存器指令（Jump and Jump-Register Instructions）**
 
        ​		BPD只对**条件分支**的方向（taken vs not-taken）做预测。**非条件跳转**（JAL和JALR）指令将与BPD分开处理。
 
@@ -296,29 +296,35 @@
 
        > 对指令来说，在F4阶段重定向前端很简单，因为可以对指令进行解码并且可以知道其目标
 
-     - 更新Backing Predictor
+       
+
+     - **更新Backing Predictor**
 
        通常来说，BPD在Commit阶段会被更新。这是为了防止BPD被错误的路径信息污染。
-
-       > 在数据Cache中，从错误的路径中去数据可能是有用的，因为有可能未来的代码执行可能会取该数据。糟糕的情况下，Cache的有效的容量减少了。
-     >
+     
+       > 在数据Cache中，从错误的路径中取数据可能是有用的，因为有可能未来的代码执行可能会取该数据。糟糕的情况下，Cache的有效的容量减少了。
+       >
        > 但是对于BPD来说，添加错误路劲的信息是非常危险的，这个错误路径确实代表了永远不会执行的路径，因此该信息永远不会对以后的代码执行有用。
      >
        > 更糟糕的是，别名（aliasing）是分支预测器中的一个问题（最多使用部分标签检查），错误路径信息会产生破坏性的别名问题，从而是预测精度变差。最后，正在预测信息的旁路可能会发生，从而笑出了指导提交阶段才更新预测器的代价。
-
-       然而，因为BPD使用了全局历史（global history），所以当前端被重定向后，全局历史必须重置，因此，当发生错误预测时，还必须（部分）更新BPD，以重置所在Fetch阶段发生的推测更新
-
-       ​		在做一个预测时，BPD传递给流水线一个“回应信息包”（response info packet）。这个“info packet”在提交之前一直存储在Fetch Target Queue（FTQ）中。
-
-       > 这些“info packets”不存储在ROB有两个原因：1.它们和Fetch Packet相关而不是和指令相关。2.它们非常的expensive（包含的信息非常多？）所以将FTQ的大小设置小于ROB是很合理的。
-
-       一旦所有的与“info packet”相关的指令被提交了，“info packet”会被放置到BPD中（以及分支的最终结果），BPD会被更新。预测的FTQ包括了FTQ，该FTQ处理在提交期间更新预测变量所需的快照信息。
-     
-       <font color=red>？？？</font>
      
        
      
-     - 管理全局历史寄存器（Managing the Global History Register，GHR）
+       ​		然而，因为BPD使用了全局历史（global history），所以当前端被重定向后，全局历史必须重置，因此，当发生错误预测时，还必须（部分）更新BPD，以重置所在Fetch阶段发生的推测更新
+     
+       ​		在做一个预测时，BPD传递给流水线一个“回应信息包”（response info packet）。这个“info packet”在提交之前一直存储在Fetch Target Queue（FTQ）中。
+       
+       
+       
+       > 这些“info packets”不存储在ROB有两个原因：1.它们和Fetch Packet相关而不是和指令相关。2.它们非常的expensive（包含的信息非常多？）所以将FTQ的大小设置小于ROB是很合理的。
+       
+       
+       
+       ​		一旦所有的与“info packet”相关的指令被提交了，“info packet”会被放置到BPD中（以及分支的最终结果），BPD会被更新。**预测的FTQ**包括了FTQ，该FTQ处理**在提交期间更新预测器所需**的快照信息。重命名快照状态包含分支重命名快照，它处理在执行阶段发生错误预测需要更新预测器所需的快照信息。
+     
+      
+     
+     - **管理全局历史寄存器（Managing the Global History Register，GHR）**
      
        GHR是分支预测器中的一个重要组成部分，它包含了前面N个分支的结果（N为GHR的大小）
      
@@ -330,19 +336,37 @@
      
        > 注意：从开始的F0阶段进行预测（读取全局历史记录）到在F4阶段重定向前端（全局历史被更新）之间存在延迟。这导致一个“影子”，在该影子中，在F0阶段开始做预测分支看不到前面一两个周期（即现在F1/2/3阶段）分支的结果。尽管这些“影子分支"必须反应全局历史的快照，但这一点很重要。
      
-     - 用于预测的FTQ（The Fetch Target Queue for Predictions）
+       ​		最后还有一个问题——异常的管道行为。虽然每个分支包含一个GHR的快照时，任何指令可以潜在的抛出一个例外，这将会造成前端的重定向。这样的事件会导致GHR变的冲突。对于异常（exceptions），这看上去好像可以接受——异常应该很少见，并且陷阱处理程序无论如何都会对GHR造成污染（从用户代码的角度来看）。
      
-     - 重命名快照状态（Rename Snapshot State）
+       ​		然而，一些异常的时间包含“流水线重放（pipeline replays）”——一个指令造成了流水线刷新，该指令会重新获取并执行。因此，BPD还会维护GHR的提交副本，并在任何类型的管道刷新事件时重置该副本。
      
-     - 抽象的分支预测器类型（The Abstract Branch Predictor）
+       > 一个pipeline replays的例子：内存排序失败，一个load先于其依赖的store指令执行，并且获得了错误的数据，唯一的回复方法就是刷新整条流水线并重新执行load指令
      
-     - 两位计数器表（The Two-bit Counter Tables）
+     - **用于预测的FTQ（The Fetch Target Queue for Predictions）**
      
-     - GShare预测器（The GShare Predictor）
+       ​		ROB（Reorder Buffer，重排序缓存，see [The Reorder Buffer (ROB) and the Dispatch Stage](https://docs.boom-core.org/en/latest/sections/reorder-buffer.html#the-reorder-buffer-rob-and-the-dispatch-stage) ）维护着所有inflight中的指令的记录。同样，FTQ也维护着所有inflight分支预测和PC信息的记录。这两种结构分离的，因为FTQ的条目非常的昂贵并且并不是所有的ROB条目都会保留一个分支指令。六个指令中大约只有一个指令是分支指令，因此可以是FTQ的条目少于ROB的条目，以利用额外的节省
      
-     - TAGE预测器（The TAGE Predictor）
+       ​		每一个FTQ条目对应着一个存取周期。对于每一个预测，分支预测器会将以后用于执行更新的数据打包。例如，分支预测器将要记住预测来自哪个*索引（index）*，以便稍后可以更新该索引处的计数器（counter），这个数据存储在FTQ中。
      
-     - 其他预测器（Other Predictors）
+       ​		当Fetch Packet中最后一个指令被提交后，FTQ条目会被释放并返回给分支预测器。利用存储在FTQ条目中的数据，分支预测器可以执行对其预测状态的任何所需更新。
+     
+       ​		这里有很多在Commit以后才更新分支预测器的原因，最主要的原因这样可以学到正确的信息，在一个数据cache中，从一个错误的路径取数据可能是有用的，因为后面的在不同路径上的执行可能会用到。但是对分支预测器，一个错误路径的更新纯属一个污染——占用了条目存储了永远都无效的数据。即使后期确实采用了不同的路径，获得他的历史也不会相同。最后，虽然cache是完全标记的，分支预测器使用部分标记的，因此会遭受解构性别名的困扰。
+     
+       ​		当然，Fetch和Commit之间存在的延迟有些不方便，如果正在进行多个循环迭代，这将会导致额外的分支错误预测。然而FTQ可以用来<font color=red>（旁路？绕过？）</font>分支预测来缓解这一问题。当前，这一旁路行为在BOOM中并不支持。
+     
+       ​		
+     
+     - **重命名快照状态（Rename Snapshot State）**
+     
+     - **抽象的分支预测器类型（The Abstract Branch Predictor）**
+     
+     - **两位计数器表（The Two-bit Counter Tables）**
+     
+     - **GShare预测器（The GShare Predictor）**
+     
+     - **TAGE预测器（The TAGE Predictor）**
+     
+     - **其他预测器（Other Predictors）**
 
    
 
