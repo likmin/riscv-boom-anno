@@ -301,72 +301,125 @@
      - **更新Backing Predictor**
 
        通常来说，BPD在Commit阶段会被更新。这是为了防止BPD被错误的路径信息污染。
-     
+
        > 在数据Cache中，从错误的路径中取数据可能是有用的，因为有可能未来的代码执行可能会取该数据。糟糕的情况下，Cache的有效的容量减少了。
        >
        > 但是对于BPD来说，添加错误路劲的信息是非常危险的，这个错误路径确实代表了永远不会执行的路径，因此该信息永远不会对以后的代码执行有用。
-     >
-       > 更糟糕的是，别名（aliasing）是分支预测器中的一个问题（最多使用部分标签检查），错误路径信息会产生破坏性的别名问题，从而是预测精度变差。最后，正在预测信息的旁路可能会发生，从而笑出了指导提交阶段才更新预测器的代价。
-     
        
-     
-       ​		然而，因为BPD使用了全局历史（global history），所以当前端被重定向后，全局历史必须重置，因此，当发生错误预测时，还必须（部分）更新BPD，以重置所在Fetch阶段发生的推测更新
-     
-       ​		在做一个预测时，BPD传递给流水线一个“回应信息包”（response info packet）。这个“info packet”在提交之前一直存储在Fetch Target Queue（FTQ）中。
+       >更糟糕的是，别名（aliasing）是分支预测器中的一个问题（最多使用部分标签检查），错误路径信息会产生破坏性的别名问题，从而是预测精度变差。最后，正在预测信息的旁路可能会发生，从而笑出了指导提交阶段才更新预测器的代价。
+       
+       
+       
+       ​		然而，因为BPD使用了全局历史（global history），所以当前端被重定向后，全局历史必须重置，因此，当发生错误预测时，还必须（部分）更新BPD，以重置所在Fetch阶段发生的推测更新。		在做一个预测时，BPD传递给流水线一个“回应信息包”（response info packet）。这个“info packet”在提交之前一直存储在Fetch Target Queue（FTQ）中。
        
        
        
        > 这些“info packets”不存储在ROB有两个原因：1.它们和Fetch Packet相关而不是和指令相关。2.它们非常的expensive（包含的信息非常多？）所以将FTQ的大小设置小于ROB是很合理的。
        
-       
-       
        ​		一旦所有的与“info packet”相关的指令被提交了，“info packet”会被放置到BPD中（以及分支的最终结果），BPD会被更新。**预测的FTQ**包括了FTQ，该FTQ处理**在提交期间更新预测器所需**的快照信息。重命名快照状态包含分支重命名快照，它处理在执行阶段发生错误预测需要更新预测器所需的快照信息。
-     
+
       
-     
+
      - **管理全局历史寄存器（Managing the Global History Register，GHR）**
-     
+
        GHR是分支预测器中的一个重要组成部分，它包含了前面N个分支的结果（N为GHR的大小）
-     
+
        > 实际上，一个Fetch Packet的所有的条件分支的方向都被压缩为单个位（通过“或”缩减），但是在这一节，用不太准确的术语去描述历史寄存器会更容易一些
-     
+
        当我们去了一个分支`i`,重要的是，要获取前`i-N`个分支的方向，这样才能可以做准确的预测。等到提交阶段才更新GHR将会太晚了（数十条分支可能正在执行且得不到反应）。因此，一旦提取并预测了分支，就必须以推测的方式更新GHR。
-     
+
        ​		如果发生错误预测，那GHR必须重置并且跟新以反应实际的历史。这意味每一个分支（更精确的说是每一个Fetch Packet）必须发生错误预测的情况下对GHR进行快照。
-     
+
        > 注意：从开始的F0阶段进行预测（读取全局历史记录）到在F4阶段重定向前端（全局历史被更新）之间存在延迟。这导致一个“影子”，在该影子中，在F0阶段开始做预测分支看不到前面一两个周期（即现在F1/2/3阶段）分支的结果。尽管这些“影子分支"必须反应全局历史的快照，但这一点很重要。
-     
+
        ​		最后还有一个问题——异常的管道行为。虽然每个分支包含一个GHR的快照时，任何指令可以潜在的抛出一个例外，这将会造成前端的重定向。这样的事件会导致GHR变的冲突。对于异常（exceptions），这看上去好像可以接受——异常应该很少见，并且陷阱处理程序无论如何都会对GHR造成污染（从用户代码的角度来看）。
-     
+
        ​		然而，一些异常的时间包含“流水线重放（pipeline replays）”——一个指令造成了流水线刷新，该指令会重新获取并执行。因此，BPD还会维护GHR的提交副本，并在任何类型的管道刷新事件时重置该副本。
-     
+
        > 一个pipeline replays的例子：内存排序失败，一个load先于其依赖的store指令执行，并且获得了错误的数据，唯一的回复方法就是刷新整条流水线并重新执行load指令
-     
+
      - **用于预测的FTQ（The Fetch Target Queue for Predictions）**
-     
+
        ​		ROB（Reorder Buffer，重排序缓存，see [The Reorder Buffer (ROB) and the Dispatch Stage](https://docs.boom-core.org/en/latest/sections/reorder-buffer.html#the-reorder-buffer-rob-and-the-dispatch-stage) ）维护着所有inflight中的指令的记录。同样，FTQ也维护着所有inflight分支预测和PC信息的记录。这两种结构分离的，因为FTQ的条目非常的昂贵并且并不是所有的ROB条目都会保留一个分支指令。六个指令中大约只有一个指令是分支指令，因此可以是FTQ的条目少于ROB的条目，以利用额外的节省
-     
+
        ​		每一个FTQ条目对应着一个存取周期。对于每一个预测，分支预测器会将以后用于执行更新的数据打包。例如，分支预测器将要记住预测来自哪个*索引（index）*，以便稍后可以更新该索引处的计数器（counter），这个数据存储在FTQ中。
-     
+
        ​		当Fetch Packet中最后一个指令被提交后，FTQ条目会被释放并返回给分支预测器。利用存储在FTQ条目中的数据，分支预测器可以执行对其预测状态的任何所需更新。
-     
+
        ​		这里有很多在Commit以后才更新分支预测器的原因，最主要的原因这样可以学到正确的信息，在一个数据cache中，从一个错误的路径取数据可能是有用的，因为后面的在不同路径上的执行可能会用到。但是对分支预测器，一个错误路径的更新纯属一个污染——占用了条目存储了永远都无效的数据。即使后期确实采用了不同的路径，获得他的历史也不会相同。最后，虽然cache是完全标记的，分支预测器使用部分标记的，因此会遭受解构性别名的困扰。
-     
+
        ​		当然，Fetch和Commit之间存在的延迟有些不方便，如果正在进行多个循环迭代，这将会导致额外的分支错误预测。然而FTQ可以用来<font color=red>（旁路？绕过？）</font>分支预测来缓解这一问题。当前，这一旁路行为在BOOM中并不支持。
-     
+
        ​		
-     
+
      - **重命名快照状态（Rename Snapshot State）**
-     
+
+       ​		FTQ中保留着在commit阶段更新分支预测器所需的分支预测器数据（对于正确的预测和错误的预测）。然而，当分支预测器做了一个错误的预测时需要立刻更新，所以这里需要添加状态。例如，一个预测失败发生了，推测更新的GHR笔记重置到处理器开始Fetch和预测前的正确的值。
+
+       ​		这个状态可能非常昂贵，但是一旦分支在Execute极端解决了就可以释放掉。因此，这个状态和分支重命名快照并行处理。在Decode和Rename期间，每个分支分配给了一个**分支标签（Branch Tag）**并且做了一个重命名表的快照，如果有错误预测发生，可以在单周期内回滚。和分支标签（Branch Tag）和重命名映射表快照（Rename Map Table Snapshots）一样，一旦在执行阶段分支单元解决了分支问题，相应的分支重命名快照会立刻被释放。
+
+       <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/The Branch Predictor Pipeline.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.9 分支预测器的流水线，图中所示的是分支预测流水线中I/O。前端在F0阶段发送"next PC(即图中的Req)。在“Abstract Predictor"中，hashing由“Abstract Predictor”包装器管理。"Abstract Predictor"返回一个<b>Backing Predictor（BPD）的回应（response）</b>或者说为Fetch Packet中的每一条指令返回一个预测</div> </center>
+
+       
+
      - **抽象的分支预测器类型（The Abstract Branch Predictor）**
-     
+
+       ​		为了方便探索不同的以全局历史为基础的BPD设计，这里提供了一个抽象的“BrPredictor”类。在BPD中提供了一个标准的接口和管理全局历史寄存器的控制电路。正如上图中的“Abstract Predictor”。跟多细节可以查看The GShare Predictor Pipeline。
+
+       > 在BOOM中应该对应于`BoomBrPredictor`
+
+       - **Global History**
+
+         正如讨论的管理全局历史寄存器，对于任何一个分支预测器来说，全局历史是非常重要的。它由抽闲的`BranchPredictor`类处理。任何分支预测器都extends抽闲的`BranchPredictor`类以访问全局历史而不用去处理快照（snapshotting）、更新（updating）、旁路（bypassing）。
+
+       - **Operating System-aware Global Histories**
+
+         尽管关于其好处的数据只是初步的，但是BOOM趋势支持可识别操作系统的全局历史。正常的全局历史跟踪所有特权级别的指令，第二个仅限用户的全局历史记录仅跟踪用户级指令。
+
      - **两位计数器表（The Two-bit Counter Tables）**
-     
+
+       ​		大多数分支预测器的基础构建模块是“两位计数器表（Two-bit Counter Table，2BC）”。当一个特定的分支重复taken，计数器会饱和到最大值3（0b11）或者说是“strongly taken”。同样，重复not-taken分支会饱和到0（0b00）.两位计数器中的高位指定预测（taken or not-taken）并且低位对高位的预测有平衡作用（预测有多“strong”）。
+
+       <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/The Branch Predictor Pipeline.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.10 GShare预测器利用全局历史（global history）和PC的hash值去索引两位计数器表，高位用于预测</div> </center>
+
+       这里的两位计数器整合到一张表中。理想情况下，一个好的分支预测器指导索引那个计数器可以做最好的预测。然而，为了将这些两位计数器装入dense SRAM，两位计数器的有限状态机做了一个改变——在`weakly not-taken`状态下做了错误的预测会导致状态移动到`strongly taken`状态。FSM的行为如下：
+
+       <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/2BC state machine.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.11 两位计数器状态机</div> </center>
+
+       ​		虽然这不再是严格意义的计数器，这样的改变允许我们分开读和写*prediction*和*hysteresis*位，并将他们放在一个分开的顺序内存表中。在硬件中一个2BC表可以按如下方式实现：
+
+       - P-bit
+         - Read - 在每个周期都做预测
+         - Write - 当错误预测发生时
+       - H-bit
+         - Read - 当错误预测发生时
+         - Write - 当一个分支解决时（写分支发生的方向）
+
+       ​        通过分开高位p-bit和低位h-bit，我们可以将他们放入1 读/1写的SRAM中。其他假设可以帮助我们做的更好。预测失败很少见且分支解决并需要在每个周期都会出现。同样写操作可能会被延迟甚至完全删除。因此h-table可以利用一个单独的1-rw端口的SRAM实现，方法是将写操作排队，并不执行读操作时将其排空。同样p-table可以在1-rw SRAM中通过存储实现，方法是在没有读冲突的情况下缓存写并消耗它。
+
+       > 注意：SRAM对2BC要求的又高又瘦的长宽比并不满意。解决的方法也很简单，又高又瘦可以简单的转化成一个矩形的内存结构，索引的高位对应于SRAM的行（row），低位可以用来多路选择出行中对应的位。
+
      - **GShare预测器（The GShare Predictor）**
-     
+
+       GShare是一个简单但非常高效的分支预测器。预测时，首先计算指令地址和GHR的hash值，利用该hash值去索引两位计数器表。
+
      - **TAGE预测器（The TAGE Predictor）**
-     
+
      - **其他预测器（Other Predictors）**
+
+       BOOM提供了一些其他可能有用的预测器
+
+       - The Base Only Predictor
+
+         只用BTB中BIM（双模态预测器）做预测
+
+       - The Null Predictor
+
+         也就是静态预测器，总是预测not taken
+
+       - The Random Predictor
+
+         随机预测器利用LFSR将二者随机话化“是否进行了预测?”和“Fetch Packet的每个分支应该采取哪个方向?"。这对折磨测试BOOM和为比较分支预测器提供最坏性能基线案例非常有用。
 
    
 
