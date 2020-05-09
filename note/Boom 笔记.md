@@ -401,24 +401,34 @@
 
      - **GShare预测器（The GShare Predictor）**
 
-       GShare是一个简单但非常高效的分支预测器。预测时，首先计算指令地址和GHR的hash值，利用该hash值去索引两位计数器表。
+       ​		GShare是一个简单但非常高效的分支预测器。预测时，首先计算指令地址和GHR的hash值，利用该hash值去索引两位计数器表。Fig.10中展示的是逻辑体系结构，Fig.12展示的是物理实现和GShare预测器的结构。注意预测开始与F0阶段，此时，请求的地址呗送到了预测器，一旦指令已经从指令Cache中返回并且预测状态已经从GShare的p-table中突出，预测会出现在F3阶段中。
+
+       <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/The GShare Predictor Pipeline.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.12 The GShare Predictor Pipeline</div> </center>
 
      - **TAGE预测器（The TAGE Predictor）**
+
+       <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/The TAGE predictor.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.13 The TAGE predictor。 请求地址（PC）和全局历史被输入到每个表的索引三和和标记散列中。每一个表格提供其自己的预测（或没有预测）并且有最长历史的表格获胜</div> </center>
+
+       ​		BOOM也实现了TAGE条件分支预测器。TAGE是一个高度可参数化、最先进的全局历史预测器。当从非常小的预测器尺寸拓展到非常大的尺寸是，该设计可以保持较高的精度。它可以快速的学习短的历史，同时也可以学习非常长的历史（超过一千个分支的历史）。
+
+       ​		TAGE(TAgged GEometric,标记的几何图形)由一系列预测器的表格实现。每个表格条目包含一个预测计数器（*prediction counter*），一个有用性计数器（*usefulness counter*）和一个tag。预测计数器（*prediction counter*）提供预测并保持一定的滞后性（hypothesis），以确定预测对执行不执行的偏颇程度。有用性计数器跟踪特定条目过去对正确预测有多有用。tag只允许表在特定要求的指令地址和全局历史匹配时进行预测。
+
+     
 
      - **其他预测器（Other Predictors）**
 
        BOOM提供了一些其他可能有用的预测器
 
        - The Base Only Predictor
-
+     
          只用BTB中BIM（双模态预测器）做预测
-
+     
        - The Null Predictor
-
+     
          也就是静态预测器，总是预测not taken
-
+     
        - The Random Predictor
-
+     
          随机预测器利用LFSR将二者随机话化“是否进行了预测?”和“Fetch Packet的每个分支应该采取哪个方向?"。这对折磨测试BOOM和为比较分支预测器提供最坏性能基线案例非常有用。
 
    
