@@ -485,12 +485,12 @@
 
    - RVC Changes
 
-     ​		通过利用Rocket的`RVCExpander`扩展RVC指令来执行RVC解码。这并不改变正常的解码阶段的功能。
+     通过利用Rocket的`RVCExpander`扩展RVC指令来执行RVC解码。这并不改变正常的解码阶段的功能。
 
 
 
 
-4. 重命名阶段（The Rename Stage）
+4. **重命名阶段（The Rename Stage）**
 
    重命名阶段将每条指令指定的ISA（或逻辑）寄存器说明符映射到物理寄存器说明符。
 
@@ -500,13 +500,53 @@
 
    - 显式重命名设计（The Explicit Renaming Design）
 
+     <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/A PRF design(left) and a data-in-ROB design (right).png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.14 A PRF design(left) and a data-in-ROB design (right).png</div> </center>
+
+     ​		BOOM是一个“显式重命名”或“物理寄存器文件”的乱序核设计。一个**物理寄存器文件**拥有的寄存器数量要比ISA规定的要多，它既包含提交的体系结构寄存器状态又包含推测性寄存器状态。**重命名表**包含着需要在重命名阶段恢复的信息。当寄存器重命名后，他们的寄存器标识符被显式地更新以指向位于物理寄存器文件中的物理寄存器。
+
+     > MIPS R10K,Apaha 21264,Intel Sandy Bridge以及ARM Cortex A15都是显式重命名乱序核的实例
+
+     ​		这和“隐式重命名”或“数据在ROB”的乱序核设计形成了鲜明对比。**体系结构的寄存器文件（Architectural Register File，ARF）**仅保留提交的寄存器状态，而ROB保留推测写回数据。在提交后，ROB将推测的数据传输给ARF。
+
+     > Pentium 4 和 ARM Cortex A57 是隐式重命名设计的实例
+
    - 重命名映射表（The Rename Map Table）
 
-   - 忙表（The Busy Table）
+     <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/The Rename Map Table.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.15 重命名阶段，逻辑寄存器标识符通过读取重命名映射表去获得它们的标识符。对于超标量重命名，映射表的任何改变必须旁路到依赖的指令。物理源标识符然后可以读取<b>忙表(The Busy Table)</b>。在指令最后提交阶段，旧的标识符用于跟踪哪一个寄存器将被释放。P0在物理寄存器文件中永远是0</div> </center>
 
-   - The Free List
+     ​		重命名映射表（简称映射表）保留着从ISA寄存器到物理寄存器的推测映射。
 
-   - Stale Destination Specifiers
+     ​		每一个分支得到器自己的重命名映射表副本。如果分支预测不正确，可以从预测错误的分支的重命映射表的副本中客户重设重命名映射表。
+
+     > 对于宽流水线来说一个候选的设计可能更偏向与每个周期都做一个快照，但这样会带来额外的复杂性，以推断出“Fetch Packet”中任何给定指令的精确映射。
+
+     ​		因为RV64G ISA利用固定位置的寄存器标识符（并且没有隐式的寄存器标识符），映射表可以在指令解码之前就被读出来。因此，**Decode**和**Rename**阶段可以结合起来。
+
+     - 例外和刷新时重置
+
+       一个额外的，可选的“提交映射表”保存已提交的架构状态的重命名映射。如果启用，它将允许在刷新或发生例外时单周期重置流水线（当前映射表重置为提交映射表）。否则，流水线刷新要求多周期来展开ROB，以在提交点以重命名状态写回，每个周期一个ROB行。
+
+   - **忙表（The Busy Table）**
+
+     ​		The Busy Table跟踪每个物理寄存器的状态。如果所有的物理操作数准备好了，那指令将准备发射。
+
+   - **空闲列表（The Free List）**
+
+     ​		The Free List跟踪现在还没有使用的物理寄存器，它将在***Rename阶段***分配新的物理寄存器给指令。
+
+     ​		The Free List用一个位向量实现的。然后可以使用优先级解码器来查找第一各空闲寄存器。BOOM使用级联优先级解码器在每个周期分配多个寄存器。
+
+     > 两级重命名阶段可以使用从相对两端开始的两个优先级解码器
+
+     ​		对每个分支（或JALR）,重命名映射表会被快照，这样可以在发生错误分支预测时可以单周期恢复。同样，空闲表同样预留了一个新的**分配列表（*Allocation List*）**——初始值为0。当一个新的物理寄存器被分配后，每一个分支的分配列表将被更新，以跟踪所有在分支之后已经被分配的物理寄存器。如果错误预测发生了，其分配列表通过  分支的`分配列表` 与 `空闲列表`进行`或`操作，将其分配清单重新添加到空闲列表中。
+
+     > 从概念上讲，分支通常被描述为“快照”空闲列表（在预测失误时与当前空闲列表的进行"或"运算）。然而，快照没能说明在快照发生时分配的物理寄存器，然后释放，然后在检测分支错预测失误之前被重新分配。在这种场景下，物理寄存器会泄露，因为快照和当前的空闲列表都不知道他已经被释放了。最终，处理器变慢，因为它正努力保持足够的inflight物理寄存器，直到最终的寄存器遇到一个停顿。如果这听上去像自传，因为原作者（Chris）可能相信计算机体系讲座，那么...
+
+   - **旧目标标识符（Stale Destination Specifiers）**
+
+     ​		对于将要写入寄存器的指令，映射表将被读取以获得旧的物理目标标识符（“stale pdst”）。一旦指令提交了，stale pdst会被返回到空闲列表，因为未来没有指令会读它。
+
+     
 
 5. 重排序和分离阶段（The Reorder Buffer（ROB）and Dispatch Stage）
 
