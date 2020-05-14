@@ -101,15 +101,42 @@ class BranchPredictionStage(val bankBytes: Int)(implicit p: Parameters) extends 
 
   val btb = BoomBTB(boomParams, bankBytes)
   val bpd = BoomBrPredictor(boomParams)
+  
+  /**
+   * Note:
+   *  1.BPD只做taken/not-taken的预测
+   *  2.BPD只对条件分支（conditional branch）做预测，
+   *    不处理非条件分支——“jumps（JAL）”和“jump-register（JALR）”。
+   *    
+   */
 
   btb.io.status_debug := io.status_debug
   bpd.io.status_prv := io.status_prv
   bpd.io.do_reset := false.B // TODO
 
+  /**
+   *            F0   |   F1     |    F2      |   F3     |   F4 
+   *           __________________________________________
+   *          |                                          |
+   *  --Req-->|              Abstract Predictor          |
+   *       |  |__________________________________________|
+   *       |         |          |       ↑    |   |      |
+   *       |         |          |       |    | BPD Resp |
+   *       |    ____________________    |    |   |      |
+   *       |——>|                    |   |    |   |      |
+   *           |         BTB        |———|    |   |      |
+   *           |____________________|   |    |   ↓      |
+   *                |  ↑       |    BTB Resp |          |
+   *                   |                |              
+   *                 RAS Update         ↓ 
+   * 
+   *  https://docs.boom-core.org/en/latest/_images/br-prediction-pipeline.svg
+   */
+
   //************************************************
   // Branch Prediction (F0 Stage)
 
-  btb.io.req := io.s0_req
+  btb.io.req := io.s0_req // 对应上图的Req，包含了PC值
   bpd.io.req := io.s0_req
 
   //************************************************
@@ -120,7 +147,7 @@ class BranchPredictionStage(val bankBytes: Int)(implicit p: Parameters) extends 
 
   // BTB's response isn't valid if there's no instruction from I$ to match against.
   io.f2_btb_resp.valid := btb.io.resp.valid && io.f2_valid
-  io.f2_btb_resp.bits := btb.io.resp.bits
+  io.f2_btb_resp.bits  := btb.io.resp.bits
 
   bpd.io.f2_bim_resp := btb.io.resp.bits.bim_resp
   bpd.io.f2_replay := io.f2_replay
@@ -163,15 +190,15 @@ class BranchPredictionStage(val bankBytes: Int)(implicit p: Parameters) extends 
   //************************************************
   // Update the BPD
 
-  bpd.io.f2_valid := io.f2_valid
-  bpd.io.f2_stall := io.f2_stall
-  bpd.io.f2_redirect := io.f2_redirect
-  bpd.io.f3_is_br := io.f3_is_br
-  bpd.io.f4_redirect := io.f4_redirect
-  bpd.io.f4_taken := io.f4_taken
-  bpd.io.fe_clear := io.fe_clear
-  bpd.io.ftq_restore := io.ftq_restore
-  bpd.io.commit := io.bpd_update
+  bpd.io.f2_valid     := io.f2_valid
+  bpd.io.f2_stall     := io.f2_stall
+  bpd.io.f2_redirect  := io.f2_redirect
+  bpd.io.f3_is_br     := io.f3_is_br
+  bpd.io.f4_redirect  := io.f4_redirect
+  bpd.io.f4_taken     := io.f4_taken
+  bpd.io.fe_clear     := io.fe_clear
+  bpd.io.ftq_restore  := io.ftq_restore
+  bpd.io.commit       := io.bpd_update
 
   //************************************************
   // Handle redirects/flushes

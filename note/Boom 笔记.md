@@ -121,7 +121,7 @@
 
    ​		和Rocket core一样，BOOM也有自己的前端（front-end）。该前端提取指令，并在整个Fetch阶段（fetch stage）进行预测，以便在多个Fetch周期（F0,F1...）中重定向指令流。如果在BOOM的后端监测到一个错误预测，或者BOOM自己的一个预测器想要重定向流水线到一个不同方向，一个请求将发送到前端，然后开始从一个新的指令路径取指令。更多分支预测器是如何工作的可以查看Fetch阶段流水线的Branch Prediction。
 
-   ​		因为BOOM支持超标量的(superscalar)fetch，前端从**指令内存**中检索一个**Fetch Packet**，然后将他们存入**Fetch Buffer**中以便后续的流水线使用。**Fetch Packet**中同样包含其他元数据（meta-data），例如valid和一些用于流水线后面要用到分支预测信息。另外，PC和分支预测信息被存储在Fetch Targe Queue中，Fetch Target Queue为后续的流水线保留着信息。
+   ​		因为BOOM支持超标量的(superscalar) fetch，前端从**指令内存**中检索一个**Fetch Packet**，然后将他们存入**Fetch Buffer**中以便后续的流水线使用。**Fetch Packet**中同样包含其他元数据（meta-data），例如valid和一些用于流水线后面要用到分支预测信息。另外，PC和分支预测信息被存储在Fetch Targe Queue中，Fetch Target Queue为后续的流水线保留着信息。
 
    
 
@@ -208,9 +208,9 @@
 
    - **The Next-Line Predictor（NLP）**
 
-     ​		BOOM核心的**前端（*Front-end*）**取指令，并在每个周期都会预测下一条指令的位置，如果在BOOM的后端发现预测失败或者BOOM自己的Backing Predictor（BPD）想要重定向流水线，一个请求将发送到**前端（*Front-end*）**并开始沿一个新的指令路径取指令。
+     ​		BOOM核心的**前端（*Front-end*）**取指令，并在每个周期都会预测下一条指令的位置，如果在BOOM的后端发现前面的预测失败了或者BOOM自己的Backing Predictor（BPD）想要重定向流水线，一个请求将发送到**前端（*Front-end*）**并开始沿一个新的指令路径取指令。
 
-     ​		NLP利用当前取指令的PC，并利用组合电路预测下一个周期该在哪里取指令，如果预测的正确，这里应该没有流水线气泡
+     ​		NLP利用当前取指令的PC，并利用组合电路预测下一个周期该在哪里取指令，如果预测的正确，这里应该没有流水线气泡。
 
      ​		NLP是一个**全相连的分支目标缓存（*Branch Target Buffer，BTB*）**，**双模表（*Bi-Modal Table，BIM*）**和一个**返回地址栈（*Return Address Stack，RAS*）**，这些工作在一起构成了一个快速的但精确度还可以的分支预测器。
 
@@ -261,22 +261,24 @@
 
      ​		为了捕获到跟多的分支和更复杂的分支行为，BOOM支持Backing Predictor（BPD）。
 
-     ​		BPD的目标是在一个紧凑的面积上提供一个高精确度的预测，BPD值做taken/not-taken的预测，因此它依赖于其他代理去提供有关什么指令是分支以及他们的目标是什么的信息，这个信息可以由BTB提供也可以在从i-cache中获取指令后等待它们本身自己的解码。这省去了在BPD中存储PC标签和分支目标的麻烦。
+     ​		BPD的目标是在一个紧凑的面积上提供一个高精确度的预测，BPD只做taken/not-taken的预测，因此它依赖于其他代理（agent）来提供关于哪些指令是分支以及他们的目标是什么的信息，这个信息可以由BTB提供，也可以在从i-cache中获取指令后等待它们本身自己的解码。这省去了在BPD中存储PC标签和分支目标的麻烦。
 
-     ​		在整个访存阶段，BPD的访问与Cache访问和BTB访问时并行的，这允许BPD存储在顺序内存中（即使用SRAM而不是触发器）。通过一些巧妙的架构，BPD可以存储在单端口SRAM中已实现所需的密度。
+     > 正因为PC Tag和Branch Target的存储才是NLP中的BTB变得如此昂贵。
 
-     <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/front-end.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">BOOM前端，这里你可以看到BTB和分支预测器在图像的底部，从指令寄存器中返回的指令被迅速译码，任何被BTB或BPD预测为taken的分支将在F4阶段重定向前端。预测的快照和meta-data被存储在分支重命名快照（Branch Rename Snapshots）中（这是为了在预测失败后修复预测器）或Fetch Target Queue（FTQ）中（这是为了在Commit阶段更新预测器）</div> </center>
+     ​		BPD在整个访存阶段均被访问，并与指令Cache以及BTB并行访问，这允许BPD存储在顺序内存中（即使用SRAM而不是触发器（flip-flops））。通过一些巧妙的架构，BPD可以存储在单端口SRAM中已实现所需的密度。
+
+     <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/front-end.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.8 BOOM前端，这里你可以看到BTB和分支预测器在图像的底部，从指令寄存器中返回的指令被迅速译码，任何被BTB或BPD预测为taken的分支将在F4阶段重定向前端。预测的快照和meta-data被存储在<b>分支重命名快照（Branch Rename Snapshots）</b>中（这是为了在预测失败后修复预测器）或Fetch Target Queue（FTQ）中（这是为了在Commit阶段更新预测器）</div> </center>
 
      
 
-     - **预测（Making Predictions）**
+     - **进行预测（Making Predictions）**
 
        当做预测时，BPD必须提供以下信息：
-
-       - 正在做出预测吗？
+     
+     - 正在做出预测吗？（is a prediction being made?）
        - 一个位向量的taken/not-taken的预测器
 
-       ​        根据第一个要点，BPD可能决定不进行预测。这可能是因为预测器利用tags去获知其预测是否有效或者治理可能有阻止发生预测的结构冒险。
+       ​        根据第一个要点，BPD可能决定不进行预测。这可能是因为预测器利用tags去获知其预测是否有效，或者这里可能有阻止发生结构冒险阻止去预测。
 
        ​        BPD提供了一个taken/not-taken预测的位向量，这个位向量的大小和流水线的Fetch宽度相匹配（一位对应Fetch Packet的一条指令）。后续的Fetch阶段将会decode在Fetch Packet中的指令，计算分支目标，并结合BPD的预测位向量来确定是否应该进行前端重定向。
 
@@ -292,31 +294,31 @@
 
        ​		如果NLP没有对一个JAL指令做预测，那流水线会在F4阶段重定向。
 
+       > 对指令来说，在F4阶段重定向前端很简单，因为可以对指令进行解码并且可以知道其目标。
+
        ​		没有被NLP做出预测的跳转寄存器指令（jump-register instructions）将在不进行预测的情况下被送到流水线中。由于JALR指令需要读寄存器文件以推断跳转目标，因此如果NLP不做预测，则无法做出任何操作。
 
-       > 对指令来说，在F4阶段重定向前端很简单，因为可以对指令进行解码并且可以知道其目标
+       
 
        
 
      - **更新Backing Predictor**
-
+     
        通常来说，BPD在Commit阶段会被更新。这是为了防止BPD被错误的路径信息污染。
-
+     
        > 在数据Cache中，从错误的路径中取数据可能是有用的，因为有可能未来的代码执行可能会取该数据。糟糕的情况下，Cache的有效的容量减少了。
        >
        > 但是对于BPD来说，添加错误路劲的信息是非常危险的，这个错误路径确实代表了永远不会执行的路径，因此该信息永远不会对以后的代码执行有用。
        
-       >更糟糕的是，别名（aliasing）是分支预测器中的一个问题（最多使用部分标签检查），错误路径信息会产生破坏性的别名问题，从而是预测精度变差。最后，正在预测信息的旁路可能会发生，从而笑出了指导提交阶段才更新预测器的代价。
+       >更糟糕的是，别名（aliasing）是分支预测器中的一个问题（最多使用部分标签检查），错误路径信息会产生破坏性的别名问题，从而是预测精度变差。最后，通过旁路传递尚未提交的预测信息可以消除了一些直到提交阶段才更新预测器的代价。
        
+       然而，因为BPD使用了全局历史（global history），所以当**前端**被重定向后，全局历史必须重置，因此，当发生错误预测时，还必须（部分）更新BPD，以重置所在Fetch阶段发生的推测更新。
        
-       
-       ​		然而，因为BPD使用了全局历史（global history），所以当前端被重定向后，全局历史必须重置，因此，当发生错误预测时，还必须（部分）更新BPD，以重置所在Fetch阶段发生的推测更新。		在做一个预测时，BPD传递给流水线一个“回应信息包”（response info packet）。这个“info packet”在提交之前一直存储在Fetch Target Queue（FTQ）中。
-       
-       
+       ​		在做一个预测时，BPD传递给流水线一个“回应信息包”（response info packet）。这个“info packet”在提交之前一直存储在Fetch Target Queue（FTQ）中。
        
        > 这些“info packets”不存储在ROB有两个原因：1.它们和Fetch Packet相关而不是和指令相关。2.它们非常的expensive（包含的信息非常多？）所以将FTQ的大小设置小于ROB是很合理的。
-       
-       ​		一旦所有的与“info packet”相关的指令被提交了，“info packet”会被放置到BPD中（以及分支的最终结果），BPD会被更新。**预测的FTQ**包括了FTQ，该FTQ处理**在提交期间更新预测器所需**的快照信息。重命名快照状态包含分支重命名快照，它处理在执行阶段发生错误预测需要更新预测器所需的快照信息。
+     
+       一旦所有的与“info packet”相关的指令被提交了，“info packet”会被放置到BPD中（以及分支的最终结果），BPD会被更新。用于预测的**FTQ**涵盖了FTQ，该FTQ处理**在提交期间更新预测器所需**的快照信息。**重命名快照状态（Rename Snapshot State）**包含了**分支重命名快照（Branch Rename Snapshots）**，它处理在执行阶段发生错误预测需要更新预测器所需的快照信息。
 
       
 
@@ -328,7 +330,7 @@
 
        当我们去了一个分支`i`,重要的是，要获取前`i-N`个分支的方向，这样才能可以做准确的预测。等到提交阶段才更新GHR将会太晚了（数十条分支可能正在执行且得不到反应）。因此，一旦提取并预测了分支，就必须以推测的方式更新GHR。
 
-       ​		如果发生错误预测，那GHR必须重置并且跟新以反应实际的历史。这意味每一个分支（更精确的说是每一个Fetch Packet）必须发生错误预测的情况下对GHR进行快照。
+       ​		如果发生错误预测，那GHR必须重置并且跟新以反应实际的历史。这意味为了防止发生预测失败，每一个分支（更精确的说是每一个Fetch Packet）必须对GHR进行快照
 
        > 注意：从开始的F0阶段进行预测（读取全局历史记录）到在F4阶段重定向前端（全局历史被更新）之间存在延迟。这导致一个“影子”，在该影子中，在F0阶段开始做预测分支看不到前面一两个周期（即现在F1/2/3阶段）分支的结果。尽管这些“影子分支"必须反应全局历史的快照，但这一点很重要。
 
@@ -387,12 +389,12 @@
        <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/2BC state machine.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.11 两位计数器状态机</div> </center>
 
        ​		虽然这不再是严格意义的计数器，这样的改变允许我们分开读和写*prediction*和*hysteresis*位，并将他们放在一个分开的顺序内存表中。在硬件中一个2BC表可以按如下方式实现：
-
+     
        - P-bit
          - Read - 在每个周期都做预测
          - Write - 当错误预测发生时
        - H-bit
-         - Read - 当错误预测发生时
+       - Read - 当错误预测发生时
          - Write - 当一个分支解决时（写分支发生的方向）
 
        ​        通过分开高位p-bit和低位h-bit，我们可以将他们放入1 读/1写的SRAM中。其他假设可以帮助我们做的更好。预测失败很少见且分支解决并需要在每个周期都会出现。同样写操作可能会被延迟甚至完全删除。因此h-table可以利用一个单独的1-rw端口的SRAM实现，方法是将写操作排队，并不执行读操作时将其排空。同样p-table可以在1-rw SRAM中通过存储实现，方法是在没有读冲突的情况下缓存写并消耗它。
@@ -410,7 +412,7 @@
        <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/The TAGE predictor.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.13 The TAGE predictor。 请求地址（PC）和全局历史被输入到每个表的索引三和和标记散列中。每一个表格提供其自己的预测（或没有预测）并且有最长历史的表格获胜</div> </center>
 
        ​		BOOM也实现了TAGE条件分支预测器。TAGE是一个高度可参数化、最先进的全局历史预测器。当从非常小的预测器尺寸拓展到非常大的尺寸是，该设计可以保持较高的精度。它可以快速的学习短的历史，同时也可以学习非常长的历史（超过一千个分支的历史）。
-
+     
        ​		TAGE(TAgged GEometric,标记的几何图形)由一系列预测器的表格实现。每个表格条目包含一个预测计数器（*prediction counter*），一个有用性计数器（*usefulness counter*）和一个tag。预测计数器（*prediction counter*）提供预测并保持一定的滞后性（hypothesis），以确定预测对执行不执行的偏颇程度。有用性计数器跟踪特定条目过去对正确预测有多有用。tag只允许表在特定要求的指令地址和全局历史匹配时进行预测。
      
        ​		每一个表都有与其相关的不同（且几何上增加）的历史记录量。每一个表的历史被用来和请求指令的地址做hash运算用于产生一个索引hash和一个tag hash。每一个表将会做自己的预测（或者如果没有tag与之匹配的话，则不进行预测）。有最长历史记录的表可以胜出。
