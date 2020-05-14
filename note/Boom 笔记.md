@@ -548,9 +548,74 @@
 
      
 
-5. 重排序和分离阶段（The Reorder Buffer（ROB）and Dispatch Stage）
+5. **重排序和分离阶段（The Reorder Buffer（ROB）and Dispatch Stage）**
 
    ​		重排序跟踪流水线中正在执行指令的状态，ROB的作用是给程序员提供一个错觉——他的程序时顺序执行的。在指令被解码和重命名后，指令会被分离值ROB中和提交队列中并标记为忙。当指令完成执行后，它们会通知ROB并标记为不忙。一旦ROB头部的不再忙，该指令即被提交，并且其架构状态现在可见。如果发生异常，并且发生例外的指令在ROB的开头，那么流水线将会被刷新，并且不会显示异常指令之后发生的体系结构更改。ROB会重定向PC到合适的例外处理程序。
+
+   - **ROB组织结构（The ROB Organization）**
+
+     <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/ROB.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.16 三个发射两个宽度的BOOM的ROB，<I>被调度的uops（dispatched uops）</I>写入ROB的底部（rob tail），且<I>提交的uops(commited uops,com uops)</I>是从ROB的顶部，并且更新重命名的状态。已经完成执行的Uops（wb uops）清除它们的忙位。注意：被调度的uops一起写入同一ROB行中，并在内存中的位置是连续的，从而允许单个PC代表整行。</div> </center>
+
+     ​		从概念上讲，ROB是一个循环的缓冲，它按顺序跟踪所有的飞行（inflight）指令。最旧的指令由commit head指着，最新的指令将被添加到rob末尾。
+
+     ​		为了方便超标量的*dispatch*和*commit*，ROB实现了一个有`w`banks的循环的缓冲（这里的w是机器中*dispatch*和*commit*的宽度），如Fig16所示。
+
+     > 这个设计中，BOOM的dispatch和commit的宽度设置为相同的。然而，这不是需要的基础的约束，而且可以将dispatch和commit的宽度正交化，仅仅是增加了更多的控制复杂性。
+
+     ​		在*dispatch*时，最多有`w`条指令从Fetch Packet中写入一个ROB指令中，每一条写入不同bank的同一行中。因为在一个Fetch Packet中的指令在内存中都是连续的（且对齐的），这使得单个PC可以与整个Fetch Packet相关联（并且Fetch Packet中指令的位置有器PC的低几位提供）。同时这也意味着分支将会在ROB中留下气泡，这使得向ROB添加更多的指令变得非常便宜，因为昂贵的成本在每个ROB行中均摊了。
+
+   - **ROB状态（ROB State）**
+
+     每个ROB entry包含着相对较少的状态：
+
+     ​	该entry是否有效（valid）？
+
+     ​	该entry是否忙（busy）？
+
+     ​	该entry是否是一个例外（exception）？
+
+     ​	branch mask（该entry是由哪一个分支推测的？）
+
+     ​	重命名状态（逻辑寄存器目标是什么？旧的物理寄存器目标是什么）
+
+     ​	浮点状态更新
+
+     ​	其他一个数据（例如，对静态跟踪有用的）
+
+     每一行的基础存储着PC和分支预测的信息（查看PC Storage）。The Exception State值跟踪已知最早的例外指令（查看 Exception State）。
+
+     - **Exception State**
+
+       ROB跟踪最早的发生例外指令，如果这个指令在ROB的头部，那么一个例外将会被抛出。
+
+       每一个ROB条目会用一个bit去标记，以表示在指令是否遇到了异常行为，但是仅针对已知最早的例外指令的附加异常状态（例如，错误的虚拟地址和异常原因）。通过不在每个条目中存储该状态，可以节省大量状态。
+
+     - **PC Storage**
+
+       ROB必须知道每个正在inflight的指令的PC。这些信息可以用于以下情形：
+
+       - 任何指令可能发生例外，在这种情况exception pc（epc）必须知道。
+       - 分支和跳转指令在计算他们的目标时需要知道他们自己的PC
+       - 跳转寄存器指令必须同时知道他们自己的PC和程序中接下来指令的PC，以验证前端是否预测了正确的JR目标。
+
+       这心信息存起来非常的昂贵。与其沿着流水线传递PC，不如分支和跳转指令在读寄存器时通过访问ROB的PC File以用于分支单元。这里做了两个优化：
+
+       - 每个ROB行中只存储这一个PC
+       - PC File存储在两个banks中，允许一个单独的读接口以同时读两个连续的条目（为了用于JR指令）。
+
+     
+
+   - 提交阶段
+
+     ​		当在*commit head*的指令不再忙（并且没有例外），那他就可以提交了，也就是说，其对计算机体系结构的状态更改为可见了。对于超标量的提交，整个ROB行被分析为不忙的指令（且因此最多整个ROB行的指令可以在一个单周期中被提交）。在ROB的一个行中，ROB会尽可能的提交更多的指令并释放资源。但是，ROB不会跨越多行去找可以提交的指令。
+
+     ​		当且仅当一个store指令被提交后，才会执行存储操作。对于存储的超标量提交，加载/存储单元（LSU）会被告知“有多少store”可以被标记为已提交。然后LSU会根据需要，将提交的存储耗尽到内存中。
+
+     ​		当一个指令（写入到寄存器）提交了，然后它可以释放旧的物理目标寄存器，旧的物理目标寄存器然后就可以重新分配给新的指令。
+
+   - 例外和刷新
+
+   - Point of No Return（PNR）
 
 6. 提交单元（The Issue Unit）
 
