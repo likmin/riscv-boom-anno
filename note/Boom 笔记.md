@@ -696,6 +696,24 @@
 
 7. 寄存器文件和旁路网络（The Register Files and Bypass Network）
 
+   <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/Fig.18 An example multi-issue pipeline.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.18 一个多发射流水线实例。整数寄存器文件需要6个读端口和3个写端口，用于当前的执行单元。浮点寄存器文件需要3个读端口和2个写端口。浮点和内存操作数共享到整数和浮点寄存器文件的长延迟写入端口。为了是写端口变得更简单，ALU的流水线深度被延长以匹配FPU的延迟。ALU能够从这些阶段中的任何一个旁路到寄存器读取阶段中的从属指令。</div> </center>
+
+   ​		BOOM是一个统一的，**物理寄存器文件（Physical Register File，PRF）**设计。寄存器文件同时保留着提交状态和推测状态。同时，这里有两个寄存器文件：一个是整数寄存器，一个是浮点寄存器。**重命名映射表（Rename Map Tables）**跟踪哪个寄存器文件对应于那个ISA寄存器。
+
+   ​		BOOM使用了伯克利的硬件浮点单元，该单元使用了内部65-bit的操作数格式(https://github.com/ucb-bar/berkeley-hardfloat)。因此，所有的物理浮点单元都是65-bits。
+
+   - **寄存器读（Register Read）**
+
+     寄存器文件静态地提供满足所有发出指令所需要的所有寄存器读取端口。例如，如果发射端口#0和一个整数ALU相关，并且发射端口#1和内存单元相关。那前两个读寄存器端口会静静地位ALU提供服务，接下来的两个寄存器端口将为总共四个读端口的存储单元提供服务。
+
+     - **动态调度读端口（Dynamic Read Port Scheduling）**
+
+       未来这种设计通过提供较少的寄存器读端口并利用动态调度去分配他们可以提升面积效率。这对大多数只需要一个操作数的指令非常有帮助。然而，这样确实增加了设计的额外复杂性，通常表现为仲裁和检测结构相关。同时他也要求能够kill已发射的UOP，并在以后的周期从发射队列重新发射。
+
+   - **Bypass Network**
+
+     通过旁路网络转发写回数据，可以背靠背地发射ALU操作。绕过发生在寄存器读取阶段的末尾。
+
 8. 执行流水线（The Execute Pipeline）
 
 9. 载入/存储单元（The Load/Store Unit, LSU）
