@@ -716,6 +716,30 @@
 
 8. 执行流水线（The Execute Pipeline）
 
+   <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/Fig.19 An example pipeline for a dual-issue BOOM.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.19 一个双发射BOOM流水线实例。第一个发射端口调度UOP到执行单元#0，该执行单元可以接受ALU操作数，FPU操作数和整数成指令。第二个发射端口可以调度ALU操作数，整数除指令（非流水线）以及load/store操作。ALU操作数可以旁路到依赖指令，注意在执行单元#0的ALU用流水线寄存器填充，以使延迟与FPU的iMul单元相匹配，从而简化了对写端口的调度。每一个执行单元都有一个专用的发射端口，但其中包含一些较低级别的功能单元</div> </center>
+
+   执行流水线包含UOPs的执行和写回。尽管UOPs会一个接着一个地向下移动（按照发射的顺序），但UOPs本身很可能被无序地发布到执行管道。
+
+   - **执行单元（Execution Units）**
+
+     <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/Fig.20 An example Execution Unit.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.20 一个执行单元实例。在这个实例中包含了一个整数寄存器（可以将结果通过旁路传递给相关的指令）和一个非流水线的除法器（在执行期间busy为高），两个功能单元都分享一个写端口。执行单元同时接收‘kill’信号和分支解决信号，并且按照要求将它们传递到内部功能单元</div> </center>
+
+   - **功能单元（Functional Unit）**
+
+   - **分支单元 & 分支推测（Branch Unit & Branch Speculation）**
+
+   - **加载/存储单元（Load/Store Unit）**
+
+   - **浮点单元（Floating Point Units）**
+
+   - **浮点除和开方单元（Floating Point Divide and Square-root Unit）**
+
+   - **参数化（Parameterization）**
+
+   - **控制/状态寄存器指令（Control/Status Register Instrucions）**
+
+   - **RoCC 接口**
+
 9. 载入/存储单元（The Load/Store Unit, LSU）
 
 10. 内存系统（The Memory System）
