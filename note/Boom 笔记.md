@@ -496,6 +496,20 @@
 
    重命名阶段将每条指令指定的ISA（或逻辑）寄存器说明符映射到物理寄存器说明符。
 
+   	> 重命名时只重命名目的物理寄存器，那问题来了
+   	>
+   	> lui r1, 1
+   	>
+   	> lui r2, 2
+   	>
+   	> r3 = r1 + r2
+   	>
+   	> 假设程序为r1,r2,r3分配了p1,p2,p3,那我何时才能释放这个映射？
+   	>
+   	> 答：当下一次使用该逻辑寄存器为目的寄存器时。
+
+   > 为什么物理寄存器的个数要多于逻辑寄存器
+
    - 重命名的目的（The Purpose of Renaming）
 
      ​		重命名是一项将逻辑寄存器说明符映射到新的物理寄存器说明符。寄存器重命名的目标是为了解决指令间**输出依赖**（WAW）和**反依赖**（WAR），只剩下**真依赖（RAW）**。也可以说，但用体系结构术语，寄存器重命名消除了**写后写（WAW）**和**写后读（WAR）**冒险，这两个冒险都是假的——a)只有有限数量的ISA寄存器被用作说明符。b)循环时，每一次循环都会用到指定的寄存器说明符。
@@ -646,8 +660,10 @@
      PNR的头部在ROB提交头部之前运行，标记下一条可能被错误推测或产生例外的指令。这包括未解决的分支和未翻译的内存操作。因此，即使尚未写回，提交头和PNR头后面的指令也应该保证是非推测性的。
 
      当前PNR只用于RoCC的指令。RoCC协处理器通常期待他们的指令顺序执行，并且不允许发生错误预测。因此，当指令传递给PNR头部时，我们才提交一个指令给协处理器，因此不在具有推测性。
+     
+     
 
-6. 发射单元（The Issue Unit）
+6. **发射单元（The Issue Unit）**
 
    ​		**发射队列（Issue Queue）**中保留着尚未执行的已经分离的UOPs（Micro-Ops）。当UOP的所有操作数已经准备好时，**提交槽（issue slot）**设置其`request`位为高。**发射选择逻辑（issue select logic）**测试然后会选择一个已经标记其`request`位为高的槽发射。一旦UOP被发射了，该UOP会被从发射队列中删除，为更多的分离指令腾出空间。
 
@@ -693,8 +709,10 @@
      BOOM中有两种类型的wake-up，一种是快的，一种是慢的（也称为长延迟的wakeup）。因为ALU UOPs可以通过旁路网络发送他们的写回数据，因此发射的ALU UOPs将在发出是将其唤醒广播到发射队列。
 
      然而，浮点操作数，访存和可变延迟操作数并不通过旁路网络发送，而是在写回阶段寄存器文件端口发出唤醒信号。
+     
+     
 
-7. 寄存器文件和旁路网络（The Register Files and Bypass Network）
+7. **寄存器文件和旁路网络（The Register Files and Bypass Network）**
 
    <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/Fig.18 An example multi-issue pipeline.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.18 一个多发射流水线实例。整数寄存器文件需要6个读端口和3个写端口，用于当前的执行单元。浮点寄存器文件需要3个读端口和2个写端口。浮点和内存操作数共享到整数和浮点寄存器文件的长延迟写入端口。为了是写端口变得更简单，ALU的流水线深度被延长以匹配FPU的延迟。ALU能够从这些阶段中的任何一个旁路到寄存器读取阶段中的从属指令。</div> </center>
 
@@ -741,6 +759,10 @@
    - **RoCC 接口**
 
 9. 载入/存储单元（The Load/Store Unit, LSU）
+
+   Cache一致性 MESI
+
+   内存一致性 TSO
 
 10. 内存系统（The Memory System）
 

@@ -34,6 +34,13 @@ import boom.util._
  * @param numWbPorts number of int writeback ports
  * @param numWbPorts number of FP writeback ports
  */
+
+/**
+ * TODO: int and FP use the same writeback port?
+ *
+ *
+ */
+
 class RenameStageIO(
   val plWidth: Int,
   val numPhysRegs: Int,
@@ -62,9 +69,9 @@ class RenameStageIO(
 
   // commit stage
   val com_valids = Input(Vec(plWidth, Bool()))
-  val com_uops = Input(Vec(plWidth, new MicroOp()))
+  val com_uops   = Input(Vec(plWidth, new MicroOp()))
   val rbk_valids = Input(Vec(plWidth, Bool()))
-  val rollback = Input(Bool())
+  val rollback   = Input(Bool())
 
   val debug_rob_empty = Input(Bool())
   val debug = Output(new DebugRenameStageIO(numPhysRegs))
@@ -95,7 +102,7 @@ class RenameStage(
   float: Boolean)
 (implicit p: Parameters) extends BoomModule
 {
-  val pregSz = log2Ceil(numPhysRegs)
+  val pregSz = log2Ceil(numPhysRegs) // Physical reg Size?
   val rtype = Mux(float.B, RT_FLT, RT_FIX)
 
   val io = IO(new RenameStageIO(plWidth, numPhysRegs, numWbPorts))
@@ -112,6 +119,12 @@ class RenameStage(
     val bypass_hits_rs3 = (older_uops zip alloc_reqs) map { case (r,a) => a && r.ldst === uop.lrs3 }
     val bypass_hits_dst = (older_uops zip alloc_reqs) map { case (r,a) => a && r.ldst === uop.ldst }
 
+    /**
+     * PriorityEncoderOH(Seq[Bool]) 返回一个包含最低有效位的Seq，如果有的话。
+     * 例如：PriorityEncoderOH((false.B, true.B, true.B, false.B))
+     *       结果就是(false.B, false.B, true.B, false.B)
+     * TODO：
+     */
     val bypass_sel_rs1 = PriorityEncoderOH(bypass_hits_rs1.reverse).reverse
     val bypass_sel_rs2 = PriorityEncoderOH(bypass_hits_rs2.reverse).reverse
     val bypass_sel_rs3 = PriorityEncoderOH(bypass_hits_rs3.reverse).reverse
@@ -144,16 +157,27 @@ class RenameStage(
   //-------------------------------------------------------------
   // Rename Structures
 
+  /**
+   * @param plWidth: Pipeline width
+   * @param numLregs: 逻辑寄存器个数
+   * @param numPhysRegs
+   * @param bypass
+   * @param float
+   */
+
   val maptable = Module(new RenameMapTable(
     plWidth,
-    32,
+    32,           // numLregs
     numPhysRegs,
     false,
     float))
+
+
   val freelist = Module(new RenameFreeList(
     plWidth,
     numPhysRegs,
     float))
+
   val busytable = Module(new RenameBusyTable(
     plWidth,
     numPhysRegs,
@@ -164,11 +188,11 @@ class RenameStage(
   //-------------------------------------------------------------
   // Pipeline State & Wires
 
-  // Stage 1
+  // Rename Stage 1
   val ren1_fire       = Wire(Vec(plWidth, Bool()))
   val ren1_uops       = Wire(Vec(plWidth, new MicroOp))
 
-  // Stage 2
+  // Rename Stage 2
   val ren2_valids     = Wire(Vec(plWidth, Bool()))
   val ren2_uops       = Wire(Vec(plWidth, new MicroOp))
   val ren2_fire       = io.dis_fire
@@ -181,7 +205,7 @@ class RenameStage(
   val rbk_valids      = Wire(Vec(plWidth, Bool()))
 
   for (w <- 0 until plWidth) {
-    ren1_fire(w)          := io.dec_fire(w)
+    ren1_fire(w)          := io.dec_fire(w) // will commit stage updates
     ren1_uops(w)          := io.dec_uops(w)
 
     ren2_alloc_reqs(w)    := ren2_uops(w).ldst_val && ren2_uops(w).dst_rtype === rtype && ren2_fire(w)

@@ -34,18 +34,21 @@ class RenameBusyTable(
 {
   val pregSz = log2Ceil(numPregs)
 
+  /**
+   * TODO: What does the 'rebusy_reqs' mean?
+   */
   val io = IO(new BoomBundle()(p) {
-    val ren_uops = Input(Vec(plWidth, new MicroOp))
-    val busy_resps = Output(Vec(plWidth, new BusyResp))
+    val ren_uops    = Input(Vec(plWidth, new MicroOp))
+    val busy_resps  = Output(Vec(plWidth, new BusyResp))
     val rebusy_reqs = Input(Vec(plWidth, Bool()))
 
-    val wb_pdsts = Input(Vec(numWbPorts, UInt(pregSz.W)))
+    val wb_pdsts  = Input(Vec(numWbPorts, UInt(pregSz.W)))
     val wb_valids = Input(Vec(numWbPorts, Bool()))
 
     val debug = new Bundle { val busytable = Output(Bits(numPregs.W)) }
   })
 
-  val busy_table = RegInit(0.U(numPregs.W))
+  val busy_table = RegInit(0.U(numPregs.W)) /* 为每个物理寄存器建立一个位，用于标记是否忙 */
   // Unbusy written back registers.
   val busy_table_wb = busy_table & ~(io.wb_pdsts zip io.wb_valids)
     .map {case (pdst, valid) => UIntToOH(pdst) & Fill(numPregs, valid.asUInt)}.reduce(_|_)
