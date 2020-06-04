@@ -50,7 +50,10 @@ class RenameStageIO(
   val ren_stalls = Output(Vec(plWidth, Bool()))
 
   val kill = Input(Bool())
-
+  /**
+   * TODO: dec: decode?
+   *       dis: dispatch?
+   */
   val dec_fire  = Input(Vec(plWidth, Bool())) // will commit state updates
   val dec_uops  = Input(Vec(plWidth, new MicroOp()))
 
@@ -284,12 +287,17 @@ class RenameStage(
 
   // Freelist inputs.
   freelist.io.reqs := ren2_alloc_reqs
+
   freelist.io.dealloc_pregs zip com_valids zip rbk_valids map
     {case ((d,c),r) => d.valid := c || r}
+  
   freelist.io.dealloc_pregs zip io.com_uops map
     {case (d,c) => d.bits := Mux(io.rollback, c.pdst, c.stale_pdst)}
+  
   freelist.io.ren_br_tags := ren2_br_tags
+  
   freelist.io.brinfo := io.brinfo
+  
   freelist.io.debug.pipeline_empty := io.debug_rob_empty
 
   assert (ren2_alloc_reqs zip freelist.io.alloc_pregs map {case (r,p) => !r || p.bits =/= 0.U} reduce (_&&_),

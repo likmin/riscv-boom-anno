@@ -24,6 +24,11 @@ class BusyResp extends Bundle
   val prs3_busy = Bool()
 }
 
+/**
+ * Busy Table 会跟踪每个物理寄存器的就绪状态，
+ * 如果一条指令的所有物理寄存器的都已准备好了，
+ * 那该指令就可以被发射（issued）了
+ */
 class RenameBusyTable(
   val plWidth: Int,
   val numPregs: Int,

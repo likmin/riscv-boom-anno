@@ -528,7 +528,7 @@
 
    - 重命名映射表（The Rename Map Table）
 
-     <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/The Rename Map Table.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.15 重命名阶段，逻辑寄存器标识符通过读取重命名映射表去获得它们的标识符。对于超标量重命名，映射表的任何改变必须旁路到依赖的指令。物理源标识符然后可以读取<b>忙表(The Busy Table)</b>。在指令最后提交阶段，旧的标识符用于跟踪哪一个寄存器将被释放。P0在物理寄存器文件中永远是0</div> </center>
+     <center>    <img style="border-radius: 0.3125em;    box-shadow: 0 2px 4px 0 rgba(34,36,38,.12),0 2px 10px 0 rgba(34,36,38,.08);"     src="image/The Rename Map Table.png">    <br>    <div style="color:orange; border-bottom: 1px solid #d9d9d9;    display: inline-block;    color: #999;    padding: 2px;"align= "justify">Fig.15 重命名阶段，逻辑寄存器标识符通过读取重命名映射表去获得它们的标识符。对于超标量重命名，映射表的任何改变必须旁路到依赖的指令。物理源标识符然后可以读取<b>忙表(The Busy Table)</b>。在指令最后提交阶段，旧的标识符用于跟踪哪一个寄存器将被释放。P0在物理寄存器文件中的值永远是0</div> </center>
 
      ​		重命名映射表（简称映射表）保留着从ISA寄存器到物理寄存器的推测映射。
 

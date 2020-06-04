@@ -50,6 +50,7 @@ class RenameFreeList(
   val free_list = RegInit(UInt(numPregs.W), ~(1.U(numPregs.W)))
   val br_alloc_lists = Reg(Vec(maxBrCount, UInt(numPregs.W)))
 
+  
   // Select pregs from the free list.
   val sels = SelectFirstN(free_list, plWidth)
   val sel_fire  = Wire(Vec(plWidth, Bool()))

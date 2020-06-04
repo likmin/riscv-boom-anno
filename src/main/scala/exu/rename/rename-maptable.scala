@@ -99,7 +99,9 @@ class RenameMapTable(
       br_snapshots(io.ren_br_tags(i).bits) := remap_table(i+1)
     }
   }
-
+  /**
+   * 当发生分支预测错误时，从分支快照中恢复映射表，否则则直接更新映射表
+   */
   when (io.brinfo.mispredict) {
     // Restore the map table to a branch snapshot.
     map_table := br_snapshots(io.brinfo.tag)
